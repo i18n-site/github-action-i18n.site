@@ -1,33 +1,62 @@
 name: i18n.site
 description: 'https://i18n.site'
 inputs:
-  token:
-    description: 'Create token from https://i18n.site/token'
+  I18N_SITE_TOKEN:
+    description: 'https://i18n.site/token'
     required: true
+    default: ''
+
+  NPM_TOKEN:
+    description: 'https://docs.npmjs.com/about-access-tokens'
+    required: true
+    default: ''
+
+  workdir:
+    description: 'The working directory (default is the repository root)'
+    required: false
     default: ''
 
 runs:
   using: 'composite'
   steps:
-
-    - name: Restore Cache /opt/bin
-      uses: actions/cache/restore@v4
+    - name: cache /opt/bin
+      uses: actions/cache@v4
       with:
         path: /opt/bin
-        key: ${{ runner.os }}-opt-bin
+        key: ${{ runner.os }}-opt-bin-${{ hashFiles('/opt/bin/i18n.site') }}
 
     - name: i18n.site
       shell: bash
       run: |
+        set -ex
+
+        workdir="${{ inputs.workdir }}"
+        if [ -z "$workdir" ]; then
+          workdir="$(pwd)"
+        else
+          workdir="$(realpath "$workdir")"
+        fi
+
         tmp=$(mktemp -d)
         cd $tmp
         git clone https://github.com/i18n-site/github-action-i18n.site.git .
         mkdir -p /opt
         cd /opt
-        $tmp/run.sh
+        $tmp/setup.sh i18n.site
 
-    - name: Cache /opt/bin
-      uses: actions/cache@v4
-      with:
-        path: /opt/bin
-        key: ${{ runner.os }}-opt-bin
+        cd $workdir
+
+        echo "//registry.npmjs.org/:_authToken=${{ inputs.NPM_TOKEN }}" > ~/.npmrc
+        I18N_SITE_TOKEN="${{ inputs.I18N_SITE_TOKEN }}" /opt/bin/i18n.site -n
+
+        if [[ -n $(git status -s) ]]; then
+          git config --global user.name "i18n.site"
+          git config --global user.email "github.action@i18n.site"
+          git add .
+          git commit -m 'https://i18n.site'
+          git push https://x-access-token:${{github.token}}@github.com/${{ github.repository }} HEAD:${{ github.ref }}
+        else
+          echo "NO CHANGE"
+        fi
+
+
