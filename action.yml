@@ -12,7 +12,7 @@ inputs:
     default: ''
 
   workdir:
-    description: 'The working directory (default is the repository root)'
+    description: 'working directory (default is the repository root)'
     required: false
     default: ''
 
@@ -47,7 +47,12 @@ runs:
         cd $workdir
 
         echo "//registry.npmjs.org/:_authToken=${{ inputs.NPM_TOKEN }}" > ~/.npmrc
-        I18N_SITE_TOKEN="${{ inputs.I18N_SITE_TOKEN }}" /opt/bin/i18n.site -n
+
+        branch=$(git rev-parse --abbrev-ref HEAD)
+
+        I18N_SITE_TOKEN="${{ inputs.I18N_SITE_TOKEN }}" \
+          /opt/bin/i18n.site -n \
+          $([ -f ".i18n/htm/${branch}.package.json" ] && echo "-c $branch" || echo "")
 
         if [[ -n $(git status -s) ]]; then
           git config --global user.name "i18n.site"
