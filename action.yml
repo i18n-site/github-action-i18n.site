@@ -1,0 +1,75 @@
+name: i18n.site
+description: 'https://i18n.site'
+inputs:
+  I18N_SITE_TOKEN:
+    description: 'https://i18n.site/token'
+    required: true
+    default: ''
+
+  NPM_TOKEN:
+    description: 'https://docs.npmjs.org/about-access-tokens'
+    required: true
+    default: ''
+
+  workdir:
+    description: 'working directory (default is the repository root)'
+    required: false
+    default: ''
+
+  default_branch:
+    description: 'default branch ( default is "main" )'
+    required: false
+    default: 'main'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: i18n.site
+      shell: bash
+      run: |
+        set -ex
+
+        workdir="${{ inputs.workdir }}"
+        if [ -z "$workdir" ]; then
+          workdir="$(pwd)"
+        else
+          workdir="$(realpath "$workdir")"
+        fi
+
+        tmp=$(mktemp -d)
+        cd $tmp
+        git clone https://github.com/i18n-site/github-action-i18n.site.git .
+        mkdir -p /opt
+        cd /opt
+        $tmp/setup.sh i18n.site
+
+        cd $workdir
+
+        echo "//registry.npmjs.org/:_authToken=${{ inputs.NPM_TOKEN }}" > ~/.npmrc
+
+        branch=$(git rev-parse --abbrev-ref HEAD)
+
+        I18N_SITE_TOKEN="${{ inputs.I18N_SITE_TOKEN }}" \
+          /opt/bin/i18n.site -n \
+          $([ -f ".i18n/htm/${branch}.package.json" ] && echo "-c $branch" || echo "")
+
+        if [[ -n $(git status -s) ]]; then
+          git config --global user.name "i18n.site"
+          git config --global user.email "github.action@i18n.site"
+          git add .
+          git commit -m 'https://i18n.site'
+
+          repo=https://x-access-token:${{github.token}}@github.com/${{ github.repository }}
+          git push $repo HEAD:${{ github.ref }}
+
+          default_branch=${{ inputs.default_branch }}
+          if [[ "$branch" != "$default_branch" ]]; then
+            git fetch --unshallow
+            git fetch origin $default_branch
+            git merge origin/$default_branch --no-edit
+            git commit -m"merge $branch" || true
+            git push $repo $branch:$default_branch || true
+          fi
+        else
+          echo "NO CHANGE"
+        fi
